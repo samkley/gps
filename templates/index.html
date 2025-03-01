@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Tracker Data</title>
+</head>
+<body>
+    <h1>GPS Tracker Data</h1>
+    <p><strong>Temperature:</strong> {{ data['temp'] }} °C</p>
+    <p><strong>Humidity:</strong> {{ data['hum'] }} %</p>
+    <p><strong>Light Intensity:</strong> {{ data['light'] }}</p>
+    <p><strong>Current:</strong> {{ data['current'] }} mA</p>
+    <p><strong>Voltage:</strong> {{ data['voltage'] }} V</p>
+    <p><strong>Latitude:</strong> {{ data['latitude'] }}</p>
+    <p><strong>Longitude:</strong> {{ data['longitude'] }}</p>
+    <p><strong>Speed:</strong> {{ data['speed'] }} km/h</p>
+    <p><strong>Altitude:</strong> {{ data['altitude'] }} m</p>
+</body>
+</html>
