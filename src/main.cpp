@@ -51,7 +51,8 @@ void setup() {
     }
     SerialMon.println("\nWiFi connected!");
 
-    Wire.begin();
+    // **Set I2C to use GPIO 8 (SDA) and GPIO 9 (SCL)**
+    Wire.begin(8, 9);
 
     // Initialize sensors
     if (!bme.begin(0x76)) SerialMon.println("BME280 not found!");
@@ -157,4 +158,3 @@ void sendData(float temp, float hum, float light, float current, float voltage, 
 
     http.end();
 }
-
