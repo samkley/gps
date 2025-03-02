@@ -114,9 +114,10 @@
         }).addTo(map);
 
         let marker = null;
+        const API_URL = 'https://gps-ledu.onrender.com';
 
         function updateData() {
-            fetch('/api/data')
+            fetch(API_URL + '/api/data')
                 .then(response => response.json())
                 .then(data => {
                     // Update location data
@@ -130,9 +131,9 @@
                     document.getElementById('humidity').textContent = data.environmental.humidity.toFixed(1) + ' %';
                     document.getElementById('pressure').textContent = data.environmental.pressure.toFixed(1) + ' hPa';
 
-                    // Update power data
-                    document.getElementById('current').textContent = data.environmental.current.toFixed(2) + ' A';
-                    document.getElementById('voltage').textContent = data.environmental.voltage.toFixed(2) + ' V';
+                    // Update power data - Fix: change from environmental to power
+                    document.getElementById('current').textContent = data.power.current.toFixed(2) + ' A';
+                    document.getElementById('voltage').textContent = data.power.voltage.toFixed(2) + ' V';
 
                     // Update map
                     if (data.location.latitude !== 0 || data.location.longitude !== 0) {
