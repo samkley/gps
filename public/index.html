@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Tracker Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        #map {
+            height: 400px;
+            width: 100%;
+            border-radius: 8px;
+        }
+        .card {
+            margin-bottom: 20px;
+        }
+        .value-display {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        .unit {
+            font-size: 0.8em;
+            color: #666;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container py-4">
+        <h1 class="mb-4">GPS Tracker Dashboard</h1>
+        
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Location Map</h5>
+                        <div id="map"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Location Data</h5>
+                        <div class="mb-3">
+                            <div class="text-muted">Latitude</div>
+                            <div class="value-display" id="latitude">-</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="text-muted">Longitude</div>
+                            <div class="value-display" id="longitude">-</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="text-muted">Speed</div>
+                            <div class="value-display" id="speed">-</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="text-muted">Altitude</div>
+                            <div class="value-display" id="altitude">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Environmental Data</h5>
+                        <div class="mb-3">
+                            <div class="text-muted">Temperature</div>
+                            <div class="value-display" id="temperature">-</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="text-muted">Humidity</div>
+                            <div class="value-display" id="humidity">-</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="text-muted">Pressure</div>
+                            <div class="value-display" id="pressure">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Power Data</h5>
+                        <div class="mb-3">
+                            <div class="text-muted">Current</div>
+                            <div class="value-display" id="current">-</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="text-muted">Voltage</div>
+                            <div class="value-display" id="voltage">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-muted mt-3" id="lastUpdate">Last updated: Never</div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Initialize the map
+        const map = L.map('map').setView([0, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        let marker = null;
+
+        function updateData() {
+            fetch('/api/data')
+                .then(response => response.json())
+                .then(data => {
+                    // Update location data
+                    document.getElementById('latitude').textContent = data.location.latitude.toFixed(6) + '°';
+                    document.getElementById('longitude').textContent = data.location.longitude.toFixed(6) + '°';
+                    document.getElementById('speed').textContent = data.location.speed.toFixed(1) + ' km/h';
+                    document.getElementById('altitude').textContent = data.location.altitude.toFixed(1) + ' m';
+
+                    // Update environmental data
+                    document.getElementById('temperature').textContent = data.environmental.temperature.toFixed(1) + ' °C';
+                    document.getElementById('humidity').textContent = data.environmental.humidity.toFixed(1) + ' %';
+                    document.getElementById('pressure').textContent = data.environmental.pressure.toFixed(1) + ' hPa';
+
+                    // Update power data
+                    document.getElementById('current').textContent = data.environmental.current.toFixed(2) + ' A';
+                    document.getElementById('voltage').textContent = data.environmental.voltage.toFixed(2) + ' V';
+
+                    // Update map
+                    if (data.location.latitude !== 0 || data.location.longitude !== 0) {
+                        const position = [data.location.latitude, data.location.longitude];
+                        if (!marker) {
+                            marker = L.marker(position).addTo(map);
+                        } else {
+                            marker.setLatLng(position);
+                        }
+                        map.setView(position, 15);
+                    }
+
+                    // Update timestamp
+                    if (data.lastUpdate) {
+                        const lastUpdateTime = new Date(data.lastUpdate);
+                        document.getElementById('lastUpdate').textContent = 
+                            'Last updated: ' + lastUpdateTime.toLocaleString();
+                    }
+                })
+                .catch(error => console.error('Error fetching data:', error));
+        }
+
+        // Update data every 5 seconds
+        setInterval(updateData, 5000);
+        updateData(); // Initial update
+    </script>
+</body>
+</html> 
