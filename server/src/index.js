@@ -37,7 +37,7 @@ app.use(express.static(join(__dirname, '../../public')));
 app.get('/api/update', (req, res) => {
   const { 
     latitude, longitude, speed, altitude,
-    temperature, humidity, pressure,
+    temperature, humidity, pressure, light,
     current, voltage 
   } = req.query;
 
@@ -52,7 +52,8 @@ app.get('/api/update', (req, res) => {
     environmental: {
       temperature: parseFloat(temperature) || 0,
       humidity: parseFloat(humidity) || 0,
-      pressure: parseFloat(pressure) || 0
+      pressure: parseFloat(pressure) || 0,
+      light: parseFloat(light) || 0
     },
     power: {
       current: parseFloat(current) || 0,
