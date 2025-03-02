@@ -42,6 +42,10 @@
             color: #2c3e50;
             font-weight: bold;
         }
+        .chart {
+            height: 300px;
+            width: 100%;
+        }
     </style>
 </head>
 <body>
@@ -81,40 +85,34 @@
         </div>
 
         <div class="row">
-            <div class="col-md-4">
+            <div class="col-md-6">
                 <div class="data-card">
                     <h3>Environmental Data</h3>
-                    <div class="mb-3">
-                        <div class="sensor-label">Temperature</div>
-                        <div class="sensor-value" id="temperature">-</div>
-                    </div>
-                    <div class="mb-3">
-                        <div class="sensor-label">Humidity</div>
-                        <div class="sensor-value" id="humidity">-</div>
-                    </div>
-                    <div class="mb-3">
-                        <div class="sensor-label">Light</div>
-                        <div class="sensor-value" id="light">-</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="data-card">
-                    <h3>Power Data</h3>
-                    <div class="mb-3">
-                        <div class="sensor-label">Current</div>
-                        <div class="sensor-value" id="current">-</div>
-                    </div>
-                    <div class="mb-3">
-                        <div class="sensor-label">Voltage</div>
-                        <div class="sensor-value" id="voltage">-</div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <div class="sensor-label">Temperature</div>
+                                <div class="sensor-value" id="temperature">-</div>
+                            </div>
+                            <div class="mb-3">
+                                <div class="sensor-label">Humidity</div>
+                                <div class="sensor-value" id="humidity">-</div>
+                            </div>
+                            <div class="mb-3">
+                                <div class="sensor-label">Light</div>
+                                <div class="sensor-value" id="light">-</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div id="env-chart" class="chart"></div>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-6">
                 <div class="data-card">
-                    <h3>History</h3>
-                    <div id="history-chart"></div>
+                    <h3>Light Intensity History</h3>
+                    <div id="light-chart" class="chart"></div>
                 </div>
             </div>
         </div>
@@ -133,6 +131,54 @@
         var marker = L.marker([0, 0]).addTo(map);
         var path = L.polyline([], {color: 'red'}).addTo(map);
 
+        // Initialize data arrays for charts
+        let timestamps = [];
+        let tempData = [];
+        let humData = [];
+        let lightData = [];
+        const maxDataPoints = 50; // Keep last 50 data points
+
+        // Initialize environmental chart
+        let envChart = Plotly.newPlot('env-chart', [
+            {
+                y: tempData,
+                name: 'Temperature',
+                type: 'line',
+                line: {color: '#e74c3c'}
+            },
+            {
+                y: humData,
+                name: 'Humidity',
+                type: 'line',
+                line: {color: '#3498db'}
+            }
+        ], {
+            margin: {t: 20, r: 20, l: 40, b: 30},
+            showlegend: true,
+            legend: {orientation: 'h', y: -0.2},
+            yaxis: {title: 'Value'},
+            height: 250
+        });
+
+        // Initialize light chart
+        let lightChart = Plotly.newPlot('light-chart', [{
+            y: lightData,
+            type: 'line',
+            line: {color: '#f1c40f'},
+            fill: 'tozeroy'
+        }], {
+            margin: {t: 20, r: 20, l: 40, b: 30},
+            showlegend: false,
+            yaxis: {title: 'Light (lux)'},
+            height: 250
+        });
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'Never';
+            const date = new Date(timestamp);
+            return date.toLocaleString();
+        }
+
         function updateData() {
             fetch('/latest_data')
                 .then(response => response.json())
@@ -140,28 +186,59 @@
                     if (Object.keys(data).length === 0) return;
 
                     // Update location data
-                    document.getElementById('latitude').textContent = data.latitude.toFixed(6) + '°';
-                    document.getElementById('longitude').textContent = data.longitude.toFixed(6) + '°';
-                    document.getElementById('speed').textContent = data.speed.toFixed(2) + ' km/h';
-                    document.getElementById('altitude').textContent = data.altitude.toFixed(1) + ' m';
+                    document.getElementById('latitude').textContent = data.latitude ? data.latitude.toFixed(6) + '°' : '-';
+                    document.getElementById('longitude').textContent = data.longitude ? data.longitude.toFixed(6) + '°' : '-';
+                    document.getElementById('speed').textContent = data.speed ? data.speed.toFixed(2) + ' km/h' : '-';
+                    document.getElementById('altitude').textContent = data.altitude ? data.altitude.toFixed(1) + ' m' : '-';
 
                     // Update environmental data
-                    document.getElementById('temperature').textContent = data.temperature.toFixed(1) + ' °C';
-                    document.getElementById('humidity').textContent = data.humidity.toFixed(1) + ' %';
-                    document.getElementById('light').textContent = data.light.toFixed(1) + ' lux';
+                    document.getElementById('temperature').textContent = data.temperature ? data.temperature.toFixed(1) + ' °C' : '-';
+                    document.getElementById('humidity').textContent = data.humidity ? data.humidity.toFixed(1) + ' %' : '-';
+                    document.getElementById('light').textContent = data.light ? data.light.toFixed(1) + ' lux' : '-';
 
-                    // Update power data
-                    document.getElementById('current').textContent = data.current.toFixed(2) + ' mA';
-                    document.getElementById('voltage').textContent = data.voltage.toFixed(2) + ' V';
+                    // Update last update time with proper formatting
+                    document.getElementById('last-update').textContent = formatTimestamp(data.timestamp);
 
-                    // Update last update time
-                    document.getElementById('last-update').textContent = data.timestamp;
+                    // Update map if location data exists
+                    if (data.latitude && data.longitude) {
+                        var latlng = [data.latitude, data.longitude];
+                        marker.setLatLng(latlng);
+                        map.setView(latlng);
+                        path.addLatLng(latlng);
+                    }
 
-                    // Update map
-                    var latlng = [data.latitude, data.longitude];
-                    marker.setLatLng(latlng);
-                    map.setView(latlng);
-                    path.addLatLng(latlng);
+                    // Update charts with current time
+                    const currentTime = new Date().toLocaleTimeString();
+                    timestamps.push(currentTime);
+                    tempData.push(data.temperature || null);
+                    humData.push(data.humidity || null);
+                    lightData.push(data.light || null);
+
+                    // Keep only last maxDataPoints
+                    if (timestamps.length > maxDataPoints) {
+                        timestamps.shift();
+                        tempData.shift();
+                        humData.shift();
+                        lightData.shift();
+                    }
+
+                    // Update environmental chart
+                    Plotly.update('env-chart', {
+                        y: [tempData, humData]
+                    }, {
+                        xaxis: {range: [timestamps[0], timestamps[timestamps.length-1]]}
+                    });
+
+                    // Update light chart
+                    Plotly.update('light-chart', {
+                        y: [lightData]
+                    }, {
+                        xaxis: {range: [timestamps[0], timestamps[timestamps.length-1]]}
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching data:', error);
+                    document.getElementById('last-update').textContent = 'Error updating data';
                 });
         }
 
