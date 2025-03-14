@@ -1,73 +1,70 @@
-# GPS Tracker Dashboard
+# GPS Environmental Monitoring System
 
-A real-time GPS tracking dashboard that displays location, environmental, and power data from an ESP32 device.
+This project implements an environmental monitoring system using an ESP32 microcontroller with various sensors and a SIM7600 GPS/GSM module. The system collects environmental data and GPS location information, then sends it to a web server.
+
+## Hardware Components
+
+- ESP32 Development Board
+- BME280 Temperature/Humidity/Pressure Sensor
+- TSL2561 Light Sensor
+- SIM7600 GPS/GSM Module
+
+## Pin Configuration
+
+### I2C Pins
+- BME280:
+  - SCL: GPIO17
+  - SDA: GPIO18
+- TSL2561:
+  - SCL: GPIO9
+  - SDA: GPIO8
+
+### SIM7600 Module Pins
+- TX: GPIO1 (ESP32 RX)
+- RX: GPIO2 (ESP32 TX)
+- PWRKEY: GPIO4
+- SLEEP/DTR: GPIO5
 
 ## Features
 
-- Real-time GPS tracking with map display
-- Environmental data monitoring (temperature, humidity, pressure)
-- Power monitoring (current, voltage)
-- Automatic data updates every 5 seconds
-- Responsive design for mobile and desktop
+- Temperature, humidity, and pressure monitoring using BME280
+- Ambient light measurement using TSL2561
+- GPS location tracking using SIM7600 module
+- WiFi connectivity for data transmission
+- Secure HTTPS data upload to server
+- Automatic network reconnection
+- Detailed debug output via Serial Monitor
+
+## Dependencies
+
+- WiFi.h
+- HTTPClient.h
+- Wire.h
+- Adafruit_BME280.h
+- Adafruit_TSL2561_U.h
+- WiFiClientSecure.h
+- TinyGSM.h
 
 ## Setup
 
-### Prerequisites
+1. Install the required libraries using the Arduino Library Manager
+2. Configure your WiFi credentials in the code
+3. Update the server URL if needed
+4. Upload the code to your ESP32
+5. Monitor the Serial output for debugging information
 
-- Node.js (v14 or higher)
-- npm (comes with Node.js)
+## Data Format
 
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone <your-repo-url>
-   cd gps-tracker
-   ```
-
-2. Install dependencies:
-   ```bash
-   cd server
-   npm install
-   ```
-
-3. Start the server:
-   ```bash
-   npm start
-   ```
-
-The server will start on port 3000 by default. You can change this by setting the `PORT` environment variable.
-
-## ESP32 Configuration
-
-The ESP32 device should send data to the `/api/update` endpoint with the following query parameters:
-
-- `latitude`: GPS latitude (decimal degrees)
-- `longitude`: GPS longitude (decimal degrees)
-- `speed`: Speed in km/h
-- `altitude`: Altitude in meters
-- `temperature`: Temperature in °C
-- `humidity`: Humidity in %
-- `pressure`: Atmospheric pressure in hPa
-- `current`: Current in amperes
-- `voltage`: Voltage in volts
-
-Example URL:
-```
-https://your-domain.com/api/update?latitude=51.5074&longitude=-0.1278&speed=0&altitude=10&temperature=25&humidity=60&pressure=1013&current=0.5&voltage=3.3
-```
-
-## Deployment
-
-This application can be deployed to Render.com:
-
-1. Create a new Web Service on Render
-2. Connect your GitHub repository
-3. Use the following settings:
-   - Build Command: `cd server && npm install`
-   - Start Command: `cd server && npm start`
-   - Environment Variable: `PORT=10000`
+The system sends data to the server with the following parameters:
+- temperature (°C)
+- humidity (%)
+- pressure (hPa)
+- light (lux)
+- latitude (degrees)
+- longitude (degrees)
+- speed (km/h)
+- altitude (m)
 
 ## License
 
-MIT
+This project is open source and available under the MIT License.

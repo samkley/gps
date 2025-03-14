@@ -7,6 +7,7 @@
 // #include <Adafruit_INA219.h>
 // #include <MPU6050.h>
 #include <WiFiClientSecure.h>  // Add at the top with other includes
+#include <TinyGSM.h>
 
 // Define I2C pins
 #define I2C_SCL 17  // BME280 SCL
@@ -55,6 +56,10 @@ const unsigned long WIFI_CHECK_INTERVAL = 30000;
 
 // Sensor objects
 Adafruit_TSL2561_Unified tsl = Adafruit_TSL2561_Unified(TSL2561_ADDR_FLOAT, 12345);
+
+// Create instances
+TinyGsm modem(SerialGPS);
+String modemResponse = "";  // Global variable for modem responses
 
 void setup() {
     Serial.begin(115200);
@@ -145,106 +150,278 @@ void setup() {
 }
 
 bool initGPS() {
-    // Clear any pending data
-    while (SerialGPS.available()) {
-        SerialGPS.read();
-    }
-
-    // Basic AT test
-    SerialGPS.println("AT");
+    Serial.println("\n=== GPS Module Initialization ===");
+    Serial.println("1. Setting up modem power control pins...");
+    
+    // Power cycle the modem
+    Serial.println("2. Power cycling modem...");
+    digitalWrite(MODEM_PWRKEY, HIGH);
+    delay(2000);
+    digitalWrite(MODEM_PWRKEY, LOW);
+    delay(5000);
+    Serial.println("   Power cycle complete");
+    
+    // Power on sequence
+    Serial.println("3. Executing power-on sequence...");
+    digitalWrite(MODEM_PWRKEY, HIGH);
     delay(1000);
-    if (!SerialGPS.find("OK")) {
-        Serial.println("AT test failed!");
+    digitalWrite(MODEM_PWRKEY, LOW);
+    delay(10000);  // Wait for module to boot
+    Serial.println("   Power-on sequence complete");
+
+    // Initialize modem
+    Serial.println("4. Initializing modem...");
+    
+    // First, try to get modem's attention
+    Serial.println("   Sending AT command...");
+    modem.sendAT("AT");
+    if (modem.waitResponse(10000) != 1) {
+        Serial.println("   ERROR: No response to AT command!");
+        Serial.println("   - Check if modem is powered correctly");
+        Serial.println("   - Verify TX/RX connections are not swapped");
+        Serial.println("   - Try increasing power-on delay");
         return false;
     }
+    Serial.println("   Modem responded to AT command");
 
-    // Set to full functionality
-    SerialGPS.println("AT+CFUN=1");
-    delay(3000);
+    // Get modem info
+    Serial.println("   Requesting modem information...");
+    modem.sendAT("ATI");
+    if (modem.waitResponse(10000, modemResponse) != 1) {
+        Serial.println("   Warning: Could not get modem info");
+    } else {
+        Serial.println("   Modem Info: " + modemResponse);
+    }
+
+    // Set echo off
+    Serial.println("   Disabling command echo...");
+    modem.sendAT("ATE0");
+    if (modem.waitResponse(10000) != 1) {
+        Serial.println("   Warning: Could not disable echo");
+    }
+
+    // Set text mode
+    Serial.println("   Setting text mode...");
+    modem.sendAT("AT+CMGF=1");
+    if (modem.waitResponse(10000) != 1) {
+        Serial.println("   Warning: Could not set text mode");
+    }
+
+    // Check SIM card status
+    Serial.println("   Checking SIM card status...");
+    modem.sendAT("+CPIN?");
+    if (modem.waitResponse(10000, modemResponse) != 1) {
+        Serial.println("   ERROR: Could not check SIM status!");
+        return false;
+    }
+    Serial.println("   SIM Status: " + modemResponse);
+
+    // Check signal quality
+    Serial.println("   Checking signal quality...");
+    modem.sendAT("+CSQ");
+    if (modem.waitResponse(10000, modemResponse) != 1) {
+        Serial.println("   Warning: Could not check signal quality");
+    } else {
+        Serial.println("   Signal Quality: " + modemResponse);
+    }
+
+    Serial.println("   Modem initialized successfully");
+
+    // Configure SIM PIN
+    Serial.println("6. Configuring SIM PIN...");
+    modem.sendAT("+CPIN=" + String(8871));
+    if (modem.waitResponse(10000) != 1) {
+        Serial.println("   ERROR: Failed to set SIM PIN!");
+        Serial.println("   - Check if SIM card is properly inserted");
+        Serial.println("   - Verify PIN code is correct");
+        return false;
+    }
+    Serial.println("   SIM PIN configured successfully");
+
+    // Set APN
+    Serial.println("7. Setting APN...");
+    
+    // Check network registration
+    Serial.println("   Checking network registration...");
+    modem.sendAT("+CREG?");
+    if (modem.waitResponse(10000, modemResponse) != 1) {
+        Serial.println("   Warning: Failed to check network registration");
+    } else {
+        Serial.println("   Network registration response: " + modemResponse);
+    }
+    
+    // Wait for network registration
+    Serial.println("   Waiting for network registration...");
+    bool registered = false;
+    for (int i = 0; i < 30; i++) {  // Try for 30 seconds
+        modem.sendAT("+CREG?");
+        if (modem.waitResponse(10000, modemResponse) == 1) {
+            if (modemResponse.indexOf("+CREG: 0,1") != -1 || modemResponse.indexOf("+CREG: 0,5") != -1) {
+                registered = true;
+                Serial.println("   Network registered successfully");
+                break;
+            }
+        }
+        delay(1000);
+    }
+    
+    if (!registered) {
+        Serial.println("   ERROR: Failed to register on network!");
+        Serial.println("   - Check SIM card is properly inserted");
+        Serial.println("   - Verify network coverage");
+        return false;
+    }
+    
+    // Set new PDP context with APN
+    Serial.println("   Setting new PDP context...");
+    modem.sendAT("+CGDCONT=1,\"IP\",\"internet\"");
+    if (modem.waitResponse(10000) != 1) {
+        Serial.println("   ERROR: Failed to set APN!");
+        Serial.println("   - Check if APN is correct for your carrier");
+        Serial.println("   - Verify network settings");
+        return false;
+    }
+    Serial.println("   APN set to 'internet'");
+
+    // Activate PDP context
+    Serial.println("   Activating PDP context...");
+    modem.sendAT("+CGACT=1,1");
+    if (modem.waitResponse(10000) != 1) {
+        Serial.println("   ERROR: Failed to activate PDP context!");
+        Serial.println("   - Check network coverage");
+        Serial.println("   - Verify SIM card is active");
+        return false;
+    }
+    Serial.println("   PDP context activated successfully");
+
+    // Set modem to full functionality
+    Serial.println("8. Setting modem to full functionality...");
+    modem.sendAT("+CFUN=1");
+    if (modem.waitResponse(10000) != 1) {
+        Serial.println("   ERROR: Failed to set modem functionality!");
+        Serial.println("   - Module might be in a bad state");
+        Serial.println("   - Try power cycling");
+        return false;
+    }
+    Serial.println("   Modem set to full functionality");
 
     // Power on GPS
-    SerialGPS.println("AT+CGNSPWR=1");
-    delay(3000);
-    
-    // Check GPS power status
-    SerialGPS.println("AT+CGNSPWR?");
-    delay(1000);
-    if (!SerialGPS.find("+CGNSPWR: 1")) {
-        Serial.println("GPS power on failed!");
+    Serial.println("9. Powering on GPS...");
+    modem.sendAT("+CGNSPWR=1");
+    if (modem.waitResponse(10000) != 1) {
+        Serial.println("   ERROR: Failed to power on GPS!");
+        Serial.println("   - Check if GPS antenna is connected");
+        Serial.println("   - Verify module supports GPS");
         return false;
     }
+    Serial.println("   GPS powered on successfully");
 
     // Enable GPS
-    SerialGPS.println("AT+CGPS=1");
-    delay(2000);
+    Serial.println("10. Enabling GPS...");
+    modem.sendAT("+CGPS=1");
+    if (modem.waitResponse(10000) != 1) {
+        Serial.println("   ERROR: Failed to enable GPS!");
+        Serial.println("   - GPS might already be enabled");
+        Serial.println("   - Try disabling and re-enabling");
+        return false;
+    }
+    Serial.println("   GPS enabled successfully");
 
+    Serial.println("=== GPS Initialization Complete ===\n");
     return true;
 }
 
 bool getGPSData(float &latitude, float &longitude, float &speed, float &altitude) {
-    // Clear buffer
-    while (SerialGPS.available()) {
-        SerialGPS.read();
-    }
-
+    Serial.println("\n--- Reading GPS Data ---");
+    
     // Request GPS data
-    SerialGPS.println("AT+CGNSINF");
-    delay(1000);
-
-    String response = "";
-    unsigned long startTime = millis();
-    while (millis() - startTime < 2000) {
-        if (SerialGPS.available()) {
-            char c = SerialGPS.read();
-            response += c;
-        }
+    Serial.println("1. Requesting GPS information...");
+    modem.sendAT("+CGNSINF");
+    if (modem.waitResponse(10000, modemResponse) != 1) {
+        Serial.println("   ERROR: Failed to get GPS data!");
+        Serial.println("   - No response from module");
+        Serial.println("   - Check if GPS is still powered on");
+        return false;
     }
+    Serial.println("   Raw response: " + modemResponse);
 
-    // Check if we got a valid response
-    if (response.indexOf("+CGNSINF:") == -1) {
+    // Parse response
+    if (modemResponse.indexOf("+CGNSINF: ") == -1) {
+        Serial.println("   ERROR: Invalid response format!");
+        Serial.println("   - Expected +CGNSINF: prefix");
+        Serial.println("   - Got: " + modemResponse);
         return false;
     }
 
-    // Parse the response
-    // Format: +CGNSINF: <GNSS run status>,<Fix status>,<UTC date & Time>,<Latitude>,<Longitude>,<MSL Altitude>,<Speed Over Ground>,...
-    int commaIndex = response.indexOf(",");
-    if (commaIndex == -1) return false;
+    modemResponse = modemResponse.substring(modemResponse.indexOf(": ") + 2);
+    int commaIndex = 0;
+    int nextCommaIndex = 0;
 
-    // Get run status and fix status
-    int runStatus = response.substring(response.indexOf(": ") + 2, commaIndex).toInt();
-    int lastCommaIndex = commaIndex;
-    commaIndex = response.indexOf(",", lastCommaIndex + 1);
-    int fixStatus = response.substring(lastCommaIndex + 1, commaIndex).toInt();
+    // Get run status
+    Serial.println("2. Parsing GPS status...");
+    nextCommaIndex = modemResponse.indexOf(',');
+    int runStatus = modemResponse.substring(commaIndex, nextCommaIndex).toInt();
+    commaIndex = nextCommaIndex + 1;
+    Serial.println("   Run status: " + String(runStatus));
 
-    if (runStatus == 1 && fixStatus == 1) {
-        // Skip UTC time
-        lastCommaIndex = commaIndex;
-        commaIndex = response.indexOf(",", lastCommaIndex + 1);
-        
-        // Get latitude
-        lastCommaIndex = commaIndex;
-        commaIndex = response.indexOf(",", lastCommaIndex + 1);
-        latitude = response.substring(lastCommaIndex + 1, commaIndex).toFloat();
-        
-        // Get longitude
-        lastCommaIndex = commaIndex;
-        commaIndex = response.indexOf(",", lastCommaIndex + 1);
-        longitude = response.substring(lastCommaIndex + 1, commaIndex).toFloat();
-        
-        // Get altitude
-        lastCommaIndex = commaIndex;
-        commaIndex = response.indexOf(",", lastCommaIndex + 1);
-        altitude = response.substring(lastCommaIndex + 1, commaIndex).toFloat();
-        
-        // Get speed
-        lastCommaIndex = commaIndex;
-        commaIndex = response.indexOf(",", lastCommaIndex + 1);
-        speed = response.substring(lastCommaIndex + 1, commaIndex).toFloat();
+    // Get fix status
+    nextCommaIndex = modemResponse.indexOf(',', commaIndex);
+    int fixStatus = modemResponse.substring(commaIndex, nextCommaIndex).toInt();
+    commaIndex = nextCommaIndex + 1;
+    Serial.println("   Fix status: " + String(fixStatus));
 
-        return (latitude != 0.0 || longitude != 0.0);
+    if (runStatus != 1 || fixStatus != 1) {
+        Serial.println("   ERROR: No GPS fix!");
+        Serial.println("   - Run status should be 1, got: " + String(runStatus));
+        Serial.println("   - Fix status should be 1, got: " + String(fixStatus));
+        Serial.println("   - Make sure you have a clear view of the sky");
+        Serial.println("   - Wait for GPS to acquire satellites");
+        return false;
     }
+    Serial.println("   GPS has valid fix");
 
-    return false;
+    // Skip UTC time
+    Serial.println("3. Parsing GPS data...");
+    nextCommaIndex = modemResponse.indexOf(',', commaIndex);
+    String utcTime = modemResponse.substring(commaIndex, nextCommaIndex);
+    commaIndex = nextCommaIndex + 1;
+    Serial.println("   UTC Time: " + utcTime);
+
+    // Get latitude
+    nextCommaIndex = modemResponse.indexOf(',', commaIndex);
+    latitude = modemResponse.substring(commaIndex, nextCommaIndex).toFloat();
+    commaIndex = nextCommaIndex + 1;
+
+    // Get longitude
+    nextCommaIndex = modemResponse.indexOf(',', commaIndex);
+    longitude = modemResponse.substring(commaIndex, nextCommaIndex).toFloat();
+    commaIndex = nextCommaIndex + 1;
+
+    // Get altitude
+    nextCommaIndex = modemResponse.indexOf(',', commaIndex);
+    altitude = modemResponse.substring(commaIndex, nextCommaIndex).toFloat();
+    commaIndex = nextCommaIndex + 1;
+
+    // Get speed
+    nextCommaIndex = modemResponse.indexOf(',', commaIndex);
+    speed = modemResponse.substring(commaIndex, nextCommaIndex).toFloat();
+
+    // Print GPS data summary
+    Serial.println("\n=== GPS Data Summary ===");
+    Serial.printf("Latitude:  %.6f°\n", latitude);
+    Serial.printf("Longitude: %.6f°\n", longitude);
+    Serial.printf("Speed:     %.2f km/h\n", speed);
+    Serial.printf("Altitude:  %.1f m\n", altitude);
+    Serial.println("UTC Time:  " + utcTime);
+    Serial.println("=====================\n");
+    // Print GPS data for debugging
+    Serial.println("GPS Data:");
+    Serial.printf("Latitude: %.6f°\n", latitude);
+    Serial.printf("Longitude: %.6f°\n", longitude);
+    Serial.printf("Speed: %.2f km/h\n", speed);
+    Serial.printf("Altitude: %.1f m\n", altitude);
+
+    return true;
 }
 
 bool reconnectWiFi() {
@@ -363,9 +540,9 @@ void sendDataWiFi(float temp, float hum, float pressure, float lux, float latitu
         int httpResponseCode = http.GET();
         
         if (httpResponseCode > 0) {
-            String response = http.getString();
+            modemResponse = http.getString();
             Serial.println("HTTP Response code: " + String(httpResponseCode));
-            Serial.println("Response: " + response);
+            Serial.println("Response: " + modemResponse);
         } else {
             Serial.println("Error on sending request: " + String(httpResponseCode));
             Serial.println("Error: " + http.errorToString(httpResponseCode));
