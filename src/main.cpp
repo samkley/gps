@@ -1,12 +1,9 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
-// Uncomment BME280 related libraries
 #include <Wire.h>
 #include <Adafruit_BME280.h>
 #include <Adafruit_TSL2561_U.h>
-// #include <Adafruit_INA219.h>
-// #include <MPU6050.h>
-#include <WiFiClientSecure.h>  // Add at the top with other includes
+#include <WiFiClientSecure.h>  // To use secure HTTPS communication
 #include <TinyGSM.h>
 
 // Define I2C pins
@@ -39,26 +36,20 @@ bool getGPSData(float &latitude, float &longitude, float &speed, float &altitude
 
 // Sensor objects
 Adafruit_BME280 bme;
-// Comment out other sensor objects
-// Adafruit_INA219 ina219;
-// MPU6050 mpu;
+Adafruit_TSL2561_Unified tsl = Adafruit_TSL2561_Unified(TSL2561_ADDR_FLOAT, 12345);
+
+// GPS Module
+TinyGsm modem(SerialGPS);
 
 // Sensor status flags
 bool bme280_ok = false;
 bool tsl2561_ok = false;
 bool gps_ok = false;
-// Comment out other sensor flags
-// bool ina219_ok = false;
-// bool mpu6050_ok = false;
 
 unsigned long lastWiFiCheck = 0;
 const unsigned long WIFI_CHECK_INTERVAL = 30000;
 
-// Sensor objects
-Adafruit_TSL2561_Unified tsl = Adafruit_TSL2561_Unified(TSL2561_ADDR_FLOAT, 12345);
-
 // Create instances
-TinyGsm modem(SerialGPS);
 String modemResponse = "";  // Global variable for modem responses
 
 void setup() {
@@ -151,115 +142,31 @@ void setup() {
 
 bool initGPS() {
     Serial.println("\n=== GPS Module Initialization ===");
-    Serial.println("1. Setting up modem power control pins...");
-    
+
     // Power cycle the modem
-    Serial.println("2. Power cycling modem...");
+    Serial.println("Power cycling modem...");
     digitalWrite(MODEM_PWRKEY, HIGH);
     delay(2000);
     digitalWrite(MODEM_PWRKEY, LOW);
     delay(5000);
-    Serial.println("   Power cycle complete");
     
     // Power on sequence
-    Serial.println("3. Executing power-on sequence...");
+    Serial.println("Power-on sequence...");
     digitalWrite(MODEM_PWRKEY, HIGH);
     delay(1000);
     digitalWrite(MODEM_PWRKEY, LOW);
     delay(10000);  // Wait for module to boot
-    Serial.println("   Power-on sequence complete");
 
     // Initialize modem
-    Serial.println("4. Initializing modem...");
-    
-    // First, try to get modem's attention
-    Serial.println("   Sending AT command...");
+    Serial.println("Initializing modem...");
     modem.sendAT("+CCID");
     if (modem.waitResponse(10000) != 1) {
-        Serial.println("   ERROR: No response to AT command!");
-        Serial.println("   - Check if modem is powered correctly");
-        Serial.println("   - Verify TX/RX connections are not swapped");
-        Serial.println("   - Try increasing power-on delay");
+        Serial.println("ERROR: No response to AT command!");
         return false;
     }
-    Serial.println("   Modem responded to AT command");
 
-    // Get modem info
-    Serial.println("   Requesting modem information...");
-    modem.sendAT("ATI");
-    if (modem.waitResponse(10000, modemResponse) != 1) {
-        Serial.println("   Warning: Could not get modem info");
-    } else {
-        Serial.println("   Modem Info: " + modemResponse);
-    }
-
-    // Set echo off
-    Serial.println("   Disabling command echo...");
-    modem.sendAT("ATE0");
-    if (modem.waitResponse(10000) != 1) {
-        Serial.println("   Warning: Could not disable echo");
-    }
-
-    // Set text mode
-    Serial.println("   Setting text mode...");
-    modem.sendAT("AT+CMGF=1");
-    if (modem.waitResponse(10000) != 1) {
-        Serial.println("   Warning: Could not set text mode");
-    }
-
-    // Check SIM card status
-    Serial.println("   Checking SIM card status...");
-    modem.sendAT("+CPIN?");
-    if (modem.waitResponse(10000, modemResponse) != 1) {
-        Serial.println("   ERROR: Could not check SIM status!");
-        return false;
-    }
-    Serial.println("   SIM Status: " + modemResponse);
-
-    // Check signal quality
-    Serial.println("   Checking signal quality...");
-    modem.sendAT("+CSQ");
-    if (modem.waitResponse(10000, modemResponse) != 1) {
-        Serial.println("   Warning: Could not check signal quality");
-    } else {
-        Serial.println("   Signal Quality: " + modemResponse);
-    }
-
-    Serial.println("   Modem initialized successfully");
-
-    // Configure SIM PIN
-    
-
-    // Set APN
-    Serial.println("7. Setting APN...");
-    
-    // Check network registration
-    Serial.println("   Checking network registration...");
-    modem.sendAT("+CREG?");
-    if (modem.waitResponse(10000, modemResponse) != 1) {
-        Serial.println("   Warning: Failed to check network registration");
-    } else {
-        Serial.println("   Network registration response: " + modemResponse);
-    }
-    
-    // Wait for network registration
-    Serial.println("   Waiting for network registration...");
-    bool registered = false;
-    for (int i = 0; i < 30; i++) {  // Try for 30 seconds
-        modem.sendAT("+CREG?");
-        if (modem.waitResponse(10000, modemResponse) == 1) {
-            registered = true;
-            break;
-        }
-        delay(1000);
-    }
-    
-    if (registered) {
-        Serial.println("   Network registration successful");
-    } else {
-        Serial.println("   Network registration failed");
-    }
-
+    // Initialize GPS
+    Serial.println("Initializing GPS...");
     return true;
 }
 
@@ -294,6 +201,8 @@ bool reconnectWiFi() {
 bool getGPSData(float &latitude, float &longitude, float &speed, float &altitude) {
     if (SerialGPS.available() > 0) {
         String nmea = SerialGPS.readStringUntil('\n');
+        Serial.println("Raw NMEA: " + nmea);  // Print raw NMEA sentence for debugging
+        
         if (nmea.startsWith("$GPGGA")) {
             int commaIndex = nmea.indexOf(',');
             if (commaIndex != -1) {
@@ -311,44 +220,71 @@ bool getGPSData(float &latitude, float &longitude, float &speed, float &altitude
 void sendDataWiFi(float temp, float hum, float pressure, float lux, float latitude, float longitude, float speed, float altitude) {
     if (WiFi.status() == WL_CONNECTED) {
         HTTPClient http;
-        String url = "https://" + String(server) + ":" + String(port) + "/data?temp=" + String(temp) + "&hum=" + String(hum) + "&pressure=" + String(pressure) + "&lux=" + String(lux) + "&latitude=" + String(latitude) + "&longitude=" + String(longitude) + "&speed=" + String(speed) + "&altitude=" + String(altitude);
-        
-        Serial.println("Sending data to server: " + url);
+        String url = "https://gps-ledu.onrender.com/api/data";  // Replace with your API URL
+
         http.begin(url);
-        int httpResponseCode = http.GET();
-        if (httpResponseCode > 0) {
-            Serial.println("Data sent successfully. Response code: " + String(httpResponseCode));
+        http.addHeader("Content-Type", "application/json");
+
+        // Create JSON payload
+        String payload = "{\"temperature\": " + String(temp) +
+                         ", \"humidity\": " + String(hum) +
+                         ", \"pressure\": " + String(pressure) +
+                         ", \"lux\": " + String(lux) +
+                         ", \"latitude\": " + String(latitude) +
+                         ", \"longitude\": " + String(longitude) +
+                         ", \"speed\": " + String(speed) +
+                         ", \"altitude\": " + String(altitude) + "}";
+
+        // Send POST request
+        int httpCode = http.POST(payload);
+
+        if (httpCode > 0) {
+            Serial.println("Data sent successfully");
         } else {
-            Serial.println("Error sending data: " + String(httpResponseCode));
+            Serial.println("Error sending data: " + String(httpCode));
         }
-        http.end();
+
+        http.end();  // Close connection
     } else {
-        Serial.println("WiFi not connected!");
+        Serial.println("WiFi not connected, skipping data send.");
     }
 }
 
 void loop() {
-    if (bme280_ok && tsl2561_ok && gps_ok) {
-        float temperature, humidity, pressure, lux, latitude, longitude, speed, altitude;
+    // Collect sensor data
+    float temp = 0.0, hum = 0.0, pressure = 0.0, lux = 0.0;
+    float latitude = 0.0, longitude = 0.0, speed = 0.0, altitude = 0.0;
 
-        // Read BME280 sensor data
-        if (bme280_ok) {
-            temperature = bme.readTemperature();
-            humidity = bme.readHumidity();
-            pressure = bme.readPressure() / 100.0F;
-        }
-
-        // Read TSL2561 light level data
-        if (tsl2561_ok) {
-            sensors_event_t event;
-            tsl.getEvent(&event);
-            lux = event.light;  // Access the light level from the event object
-        }
-
-        // Get GPS data
-        if (gps_ok && getGPSData(latitude, longitude, speed, altitude)) {
-            sendDataWiFi(temperature, humidity, pressure, lux, latitude, longitude, speed, altitude);
-        }
+    // Read BME280 data
+    if (bme280_ok) {
+        temp = bme.readTemperature();
+        hum = bme.readHumidity();
+        pressure = bme.readPressure() / 100.0F;  // Convert to hPa
     }
-    delay(10000); // Adjust delay as needed
+
+    // Read TSL2561 luminosity
+    if (tsl2561_ok) {
+        uint16_t broadband, infrared;
+        tsl.getLuminosity(&broadband, &infrared);  // Pass both variables
+        lux = broadband;  // You can use broadband or calculate a total luminosity
+    }
+
+    // Try to get GPS data if available
+    bool gpsDataAvailable = false;
+    if (gps_ok) {
+        gpsDataAvailable = getGPSData(latitude, longitude, speed, altitude);
+    }
+
+    // Send data to the website even if GPS data is missing
+    sendDataWiFi(temp, hum, pressure, lux, latitude, longitude, speed, altitude);
+
+    // If GPS data was available, also send it
+    if (gpsDataAvailable) {
+        Serial.println("GPS Data Sent");
+    } else {
+        Serial.println("No GPS data available.");
+    }
+
+    // Wait before sending next data
+    delay(5000);  // Delay between data readings
 }

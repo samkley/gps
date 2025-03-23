@@ -58,7 +58,7 @@ def receive_data():
             longitude=data['longitude'],
             speed=data['speed'],
             altitude=data['altitude'],
-            temperature=data['temp'],
+            temperature=data['temperature'],
             humidity=data['humidity'],
             light=data['light'],
             current=data['current'],
