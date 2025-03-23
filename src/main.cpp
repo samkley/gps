@@ -174,7 +174,7 @@ bool initGPS() {
     
     // First, try to get modem's attention
     Serial.println("   Sending AT command...");
-    modem.sendAT("AT");
+    modem.sendAT("+CCID");
     if (modem.waitResponse(10000) != 1) {
         Serial.println("   ERROR: No response to AT command!");
         Serial.println("   - Check if modem is powered correctly");
@@ -228,15 +228,7 @@ bool initGPS() {
     Serial.println("   Modem initialized successfully");
 
     // Configure SIM PIN
-    Serial.println("6. Configuring SIM PIN...");
-    modem.sendAT("+CPIN=" + String(8871));
-    if (modem.waitResponse(10000) != 1) {
-        Serial.println("   ERROR: Failed to set SIM PIN!");
-        Serial.println("   - Check if SIM card is properly inserted");
-        Serial.println("   - Verify PIN code is correct");
-        return false;
-    }
-    Serial.println("   SIM PIN configured successfully");
+    
 
     // Set APN
     Serial.println("7. Setting APN...");
@@ -256,303 +248,107 @@ bool initGPS() {
     for (int i = 0; i < 30; i++) {  // Try for 30 seconds
         modem.sendAT("+CREG?");
         if (modem.waitResponse(10000, modemResponse) == 1) {
-            if (modemResponse.indexOf("+CREG: 0,1") != -1 || modemResponse.indexOf("+CREG: 0,5") != -1) {
-                registered = true;
-                Serial.println("   Network registered successfully");
-                break;
-            }
+            registered = true;
+            break;
         }
         delay(1000);
     }
     
-    if (!registered) {
-        Serial.println("   ERROR: Failed to register on network!");
-        Serial.println("   - Check SIM card is properly inserted");
-        Serial.println("   - Verify network coverage");
-        return false;
+    if (registered) {
+        Serial.println("   Network registration successful");
+    } else {
+        Serial.println("   Network registration failed");
     }
-    
-    // Set new PDP context with APN
-    Serial.println("   Setting new PDP context...");
-    modem.sendAT("+CGDCONT=1,\"IP\",\"internet\"");
-    if (modem.waitResponse(10000) != 1) {
-        Serial.println("   ERROR: Failed to set APN!");
-        Serial.println("   - Check if APN is correct for your carrier");
-        Serial.println("   - Verify network settings");
-        return false;
-    }
-    Serial.println("   APN set to 'internet'");
-
-    // Activate PDP context
-    Serial.println("   Activating PDP context...");
-    modem.sendAT("+CGACT=1,1");
-    if (modem.waitResponse(10000) != 1) {
-        Serial.println("   ERROR: Failed to activate PDP context!");
-        Serial.println("   - Check network coverage");
-        Serial.println("   - Verify SIM card is active");
-        return false;
-    }
-    Serial.println("   PDP context activated successfully");
-
-    // Set modem to full functionality
-    Serial.println("8. Setting modem to full functionality...");
-    modem.sendAT("+CFUN=1");
-    if (modem.waitResponse(10000) != 1) {
-        Serial.println("   ERROR: Failed to set modem functionality!");
-        Serial.println("   - Module might be in a bad state");
-        Serial.println("   - Try power cycling");
-        return false;
-    }
-    Serial.println("   Modem set to full functionality");
-
-    // Power on GPS
-    Serial.println("9. Powering on GPS...");
-    modem.sendAT("+CGNSPWR=1");
-    if (modem.waitResponse(10000) != 1) {
-        Serial.println("   ERROR: Failed to power on GPS!");
-        Serial.println("   - Check if GPS antenna is connected");
-        Serial.println("   - Verify module supports GPS");
-        return false;
-    }
-    Serial.println("   GPS powered on successfully");
-
-    // Enable GPS
-    Serial.println("10. Enabling GPS...");
-    modem.sendAT("+CGPS=1");
-    if (modem.waitResponse(10000) != 1) {
-        Serial.println("   ERROR: Failed to enable GPS!");
-        Serial.println("   - GPS might already be enabled");
-        Serial.println("   - Try disabling and re-enabling");
-        return false;
-    }
-    Serial.println("   GPS enabled successfully");
-
-    Serial.println("=== GPS Initialization Complete ===\n");
-    return true;
-}
-
-bool getGPSData(float &latitude, float &longitude, float &speed, float &altitude) {
-    Serial.println("\n--- Reading GPS Data ---");
-    
-    // Request GPS data
-    Serial.println("1. Requesting GPS information...");
-    modem.sendAT("+CGNSINF");
-    if (modem.waitResponse(10000, modemResponse) != 1) {
-        Serial.println("   ERROR: Failed to get GPS data!");
-        Serial.println("   - No response from module");
-        Serial.println("   - Check if GPS is still powered on");
-        return false;
-    }
-    Serial.println("   Raw response: " + modemResponse);
-
-    // Parse response
-    if (modemResponse.indexOf("+CGNSINF: ") == -1) {
-        Serial.println("   ERROR: Invalid response format!");
-        Serial.println("   - Expected +CGNSINF: prefix");
-        Serial.println("   - Got: " + modemResponse);
-        return false;
-    }
-
-    modemResponse = modemResponse.substring(modemResponse.indexOf(": ") + 2);
-    int commaIndex = 0;
-    int nextCommaIndex = 0;
-
-    // Get run status
-    Serial.println("2. Parsing GPS status...");
-    nextCommaIndex = modemResponse.indexOf(',');
-    int runStatus = modemResponse.substring(commaIndex, nextCommaIndex).toInt();
-    commaIndex = nextCommaIndex + 1;
-    Serial.println("   Run status: " + String(runStatus));
-
-    // Get fix status
-    nextCommaIndex = modemResponse.indexOf(',', commaIndex);
-    int fixStatus = modemResponse.substring(commaIndex, nextCommaIndex).toInt();
-    commaIndex = nextCommaIndex + 1;
-    Serial.println("   Fix status: " + String(fixStatus));
-
-    if (runStatus != 1 || fixStatus != 1) {
-        Serial.println("   ERROR: No GPS fix!");
-        Serial.println("   - Run status should be 1, got: " + String(runStatus));
-        Serial.println("   - Fix status should be 1, got: " + String(fixStatus));
-        Serial.println("   - Make sure you have a clear view of the sky");
-        Serial.println("   - Wait for GPS to acquire satellites");
-        return false;
-    }
-    Serial.println("   GPS has valid fix");
-
-    // Skip UTC time
-    Serial.println("3. Parsing GPS data...");
-    nextCommaIndex = modemResponse.indexOf(',', commaIndex);
-    String utcTime = modemResponse.substring(commaIndex, nextCommaIndex);
-    commaIndex = nextCommaIndex + 1;
-    Serial.println("   UTC Time: " + utcTime);
-
-    // Get latitude
-    nextCommaIndex = modemResponse.indexOf(',', commaIndex);
-    latitude = modemResponse.substring(commaIndex, nextCommaIndex).toFloat();
-    commaIndex = nextCommaIndex + 1;
-
-    // Get longitude
-    nextCommaIndex = modemResponse.indexOf(',', commaIndex);
-    longitude = modemResponse.substring(commaIndex, nextCommaIndex).toFloat();
-    commaIndex = nextCommaIndex + 1;
-
-    // Get altitude
-    nextCommaIndex = modemResponse.indexOf(',', commaIndex);
-    altitude = modemResponse.substring(commaIndex, nextCommaIndex).toFloat();
-    commaIndex = nextCommaIndex + 1;
-
-    // Get speed
-    nextCommaIndex = modemResponse.indexOf(',', commaIndex);
-    speed = modemResponse.substring(commaIndex, nextCommaIndex).toFloat();
-
-    // Print GPS data summary
-    Serial.println("\n=== GPS Data Summary ===");
-    Serial.printf("Latitude:  %.6f°\n", latitude);
-    Serial.printf("Longitude: %.6f°\n", longitude);
-    Serial.printf("Speed:     %.2f km/h\n", speed);
-    Serial.printf("Altitude:  %.1f m\n", altitude);
-    Serial.println("UTC Time:  " + utcTime);
-    Serial.println("=====================\n");
-    // Print GPS data for debugging
-    Serial.println("GPS Data:");
-    Serial.printf("Latitude: %.6f°\n", latitude);
-    Serial.printf("Longitude: %.6f°\n", longitude);
-    Serial.printf("Speed: %.2f km/h\n", speed);
-    Serial.printf("Altitude: %.1f m\n", altitude);
 
     return true;
 }
 
 bool reconnectWiFi() {
-    Serial.print("Connecting to WiFi");
-    unsigned long startAttemptTime = millis();
-    
-    WiFi.begin(ssid, password);
-    
-    while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 20000) {
-        delay(500);
-        Serial.print(".");
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nWiFi connected!");
-        Serial.print("IP address: ");
-        Serial.println(WiFi.localIP());
-        return true;
-    } else {
-        Serial.println("\nWiFi connection failed!");
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastWiFiCheck < WIFI_CHECK_INTERVAL) {
         return false;
+    }
+    lastWiFiCheck = currentMillis;
+    
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.print("Connecting to WiFi...");
+        WiFi.begin(ssid, password);
+        int i = 0;
+        while (WiFi.status() != WL_CONNECTED && i < 30) {  // Retry for 30 seconds
+            delay(1000);
+            Serial.print(".");
+            i++;
+        }
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.println("\nConnected to WiFi");
+            return true;
+        } else {
+            Serial.println("\nFailed to connect to WiFi");
+            return false;
+        }
+    } else {
+        return true;
+    }
+}
+
+bool getGPSData(float &latitude, float &longitude, float &speed, float &altitude) {
+    if (SerialGPS.available() > 0) {
+        String nmea = SerialGPS.readStringUntil('\n');
+        if (nmea.startsWith("$GPGGA")) {
+            int commaIndex = nmea.indexOf(',');
+            if (commaIndex != -1) {
+                latitude = nmea.substring(commaIndex + 1, commaIndex + 10).toFloat();
+                longitude = nmea.substring(commaIndex + 11, commaIndex + 21).toFloat();
+                speed = nmea.substring(commaIndex + 22, commaIndex + 26).toFloat();
+                altitude = nmea.substring(commaIndex + 27).toFloat();
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void sendDataWiFi(float temp, float hum, float pressure, float lux, float latitude, float longitude, float speed, float altitude) {
+    if (WiFi.status() == WL_CONNECTED) {
+        HTTPClient http;
+        String url = "https://" + String(server) + ":" + String(port) + "/data?temp=" + String(temp) + "&hum=" + String(hum) + "&pressure=" + String(pressure) + "&lux=" + String(lux) + "&latitude=" + String(latitude) + "&longitude=" + String(longitude) + "&speed=" + String(speed) + "&altitude=" + String(altitude);
+        
+        Serial.println("Sending data to server: " + url);
+        http.begin(url);
+        int httpResponseCode = http.GET();
+        if (httpResponseCode > 0) {
+            Serial.println("Data sent successfully. Response code: " + String(httpResponseCode));
+        } else {
+            Serial.println("Error sending data: " + String(httpResponseCode));
+        }
+        http.end();
+    } else {
+        Serial.println("WiFi not connected!");
     }
 }
 
 void loop() {
-    // Check WiFi connection
-    if (millis() - lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
-        if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("WiFi disconnected. Reconnecting...");
-            reconnectWiFi();
+    if (bme280_ok && tsl2561_ok && gps_ok) {
+        float temperature, humidity, pressure, lux, latitude, longitude, speed, altitude;
+
+        // Read BME280 sensor data
+        if (bme280_ok) {
+            temperature = bme.readTemperature();
+            humidity = bme.readHumidity();
+            pressure = bme.readPressure() / 100.0F;
         }
-        lastWiFiCheck = millis();
-    }
 
-    float temp = 0.0;
-    float hum = 0.0;
-    float pressure = 0.0;
-    float lux = 0.0;
-    float latitude = 0.0;
-    float longitude = 0.0;
-    float speed = 0.0;
-    float altitude = 0.0;
+        // Read TSL2561 light level data
+        if (tsl2561_ok) {
+            sensors_event_t event;
+            tsl.getEvent(&event);
+            lux = event.light;  // Access the light level from the event object
+        }
 
-    // Read BME280
-    if (bme280_ok) {
-        temp = bme.readTemperature();
-        hum = bme.readHumidity();
-        pressure = bme.readPressure() / 100.0F;
-        
-        if (!isnan(temp) && !isnan(hum) && !isnan(pressure)) {
-            Serial.printf("Temperature: %.2f °C\n", temp);
-            Serial.printf("Humidity: %.2f %%\n", hum);
-            Serial.printf("Pressure: %.2f hPa\n", pressure);
-        } else {
-            Serial.println("Failed to read from BME280!");
-            temp = hum = pressure = 0.0;
+        // Get GPS data
+        if (gps_ok && getGPSData(latitude, longitude, speed, altitude)) {
+            sendDataWiFi(temperature, humidity, pressure, lux, latitude, longitude, speed, altitude);
         }
     }
-
-    // Read TSL2561
-    if (tsl2561_ok) {
-        sensors_event_t event;
-        tsl.getEvent(&event);
-        
-        if (event.light) {
-            lux = event.light;
-            Serial.printf("Light: %.2f lux\n", lux);
-        } else {
-            Serial.println("Failed to read TSL2561!");
-            lux = 0.0;
-        }
-    }
-
-    // Read GPS
-    if (gps_ok) {
-        if (getGPSData(latitude, longitude, speed, altitude)) {
-            Serial.println("GPS Fix obtained:");
-            Serial.printf("Latitude: %.6f°\n", latitude);
-            Serial.printf("Longitude: %.6f°\n", longitude);
-            Serial.printf("Speed: %.2f km/h\n", speed);
-            Serial.printf("Altitude: %.1f m\n", altitude);
-        } else {
-            Serial.println("No GPS fix available");
-        }
-    }
-
-    // Send data if WiFi is connected
-    if (WiFi.status() == WL_CONNECTED) {
-        sendDataWiFi(temp, hum, pressure, lux, latitude, longitude, speed, altitude);
-    }
-
-    delay(6000);
+    delay(10000); // Adjust delay as needed
 }
-
-void sendDataWiFi(float temp, float hum, float pressure, float lux, float latitude, float longitude, float speed, float altitude) {
-    WiFiClientSecure *client = new WiFiClientSecure;
-    if(client) {
-        client->setInsecure();
-        HTTPClient http;
-        
-        String url = "https://" + String(server) + "/api/update";
-        url += "?temperature=" + String(temp);
-        url += "&humidity=" + String(hum);
-        url += "&pressure=" + String(pressure);
-        url += "&light=" + String(lux);
-        url += "&latitude=" + String(latitude, 6);
-        url += "&longitude=" + String(longitude, 6);
-        url += "&speed=" + String(speed);
-        url += "&altitude=" + String(altitude);
-        
-        Serial.println("\nSending data via WiFi...");
-        Serial.println("URL: " + url);
-
-        http.begin(*client, url);
-        
-        int httpResponseCode = http.GET();
-        
-        if (httpResponseCode > 0) {
-            modemResponse = http.getString();
-            Serial.println("HTTP Response code: " + String(httpResponseCode));
-            Serial.println("Response: " + modemResponse);
-        } else {
-            Serial.println("Error on sending request: " + String(httpResponseCode));
-            Serial.println("Error: " + http.errorToString(httpResponseCode));
-            Serial.println("Check if the server is running and accessible");
-        }
-        
-        http.end();
-        delete client;
-    } else {
-        Serial.println("Error creating HTTP client");
-    }
-}
-
