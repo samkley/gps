@@ -2,7 +2,7 @@ from flask import Flask, request, render_template, jsonify
 import os
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
-
+import logging
 
 app = Flask(__name__)
 
@@ -40,6 +40,9 @@ class GPSData(db.Model):
             'voltage': self.voltage
         }
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -48,7 +51,8 @@ def index():
 def receive_data():
     try:
         data = request.get_json()
-        
+        logging.info(f"Received data: {data}")  # Log the received data
+
         gps_data = GPSData(
             latitude=data['latitude'],
             longitude=data['longitude'],
@@ -63,9 +67,10 @@ def receive_data():
         
         db.session.add(gps_data)
         db.session.commit()
-        
+
         return jsonify({'status': 'success'}), 200
     except Exception as e:
+        logging.error(f"Error receiving data: {str(e)}")  # Log errors
         return jsonify({'status': 'error', 'message': str(e)}), 400
 
 @app.route('/get_data')
