@@ -1,131 +1,72 @@
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template
 from datetime import datetime
-import json
+from flask_sqlalchemy import SQLAlchemy
+import os
 
 app = Flask(__name__)
 
-# Store the last 100 data points
-data_history = []
-MAX_HISTORY = 100
+# Configure the database URI
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///gps_data.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
-# HTML template for the dashboard
-HTML_TEMPLATE = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>GPS Tracker Dashboard</title>
-    <meta http-equiv="refresh" content="5">
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .data-container { 
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
+# Define the database model
+class GPSData(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    latitude = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
+    speed = db.Column(db.Float)
+    altitude = db.Column(db.Float)
+    temperature = db.Column(db.Float)
+    humidity = db.Column(db.Float)
+    light = db.Column(db.Float)
+    current = db.Column(db.Float)
+    voltage = db.Column(db.Float)
+
+    def to_dict(self):
+        return {
+            'timestamp': self.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            'latitude': self.latitude,
+            'longitude': self.longitude,
+            'speed': self.speed,
+            'altitude': self.altitude,
+            'temperature': self.temperature,
+            'humidity': self.humidity,
+            'light': self.light,
+            'current': self.current,
+            'voltage': self.voltage
         }
-        .data-card {
-            border: 1px solid #ddd;
-            padding: 15px;
-            border-radius: 8px;
-            background-color: #f9f9f9;
-        }
-        .history {
-            border: 1px solid #ddd;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 20px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        th { background-color: #f2f2f2; }
-    </style>
-</head>
-<body>
-    <h1>GPS Tracker Dashboard</h1>
-    
-    {% if latest_data %}
-    <div class="data-container">
-        <div class="data-card">
-            <h2>Location Data</h2>
-            <p>Latitude: {{ latest_data.latitude }}°</p>
-            <p>Longitude: {{ latest_data.longitude }}°</p>
-            <p>Altitude: {{ latest_data.altitude }} m</p>
-            <p>Speed: {{ latest_data.speed }} km/h</p>
-        </div>
-        
-        <div class="data-card">
-            <h2>Environmental Data</h2>
-            <p>Temperature: {{ latest_data.temp }}°C</p>
-            <p>Humidity: {{ latest_data.humidity }}%</p>
-            <p>Light: {{ latest_data.light }} lux</p>
-        </div>
-        
-        <div class="data-card">
-            <h2>Power Data</h2>
-            <p>Current: {{ latest_data.current }} mA</p>
-            <p>Voltage: {{ latest_data.voltage }} V</p>
-        </div>
-    </div>
-    {% else %}
-    <p>Waiting for data...</p>
-    {% endif %}
-    
-    <div class="history">
-        <h2>Data History</h2>
-        <table>
-            <tr>
-                <th>Time</th>
-                <th>Location</th>
-                <th>Speed</th>
-                <th>Temperature</th>
-                <th>Humidity</th>
-                <th>Light</th>
-            </tr>
-            {% for entry in data_history %}
-            <tr>
-                <td>{{ entry.timestamp }}</td>
-                <td>{{ entry.data.latitude }}, {{ entry.data.longitude }}</td>
-                <td>{{ entry.data.speed }} km/h</td>
-                <td>{{ entry.data.temp }}°C</td>
-                <td>{{ entry.data.humidity }}%</td>
-                <td>{{ entry.data.light }} lux</td>
-            </tr>
-            {% endfor %}
-        </table>
-    </div>
-</body>
-</html>
-'''
 
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE, 
-                                latest_data=data_history[-1].get('data') if data_history else None,
-                                data_history=data_history)
+    # Fetch the latest data from the database
+    latest_data = GPSData.query.order_by(GPSData.timestamp.desc()).first()
+    # Fetch the last 100 data points for history
+    data_history = GPSData.query.order_by(GPSData.timestamp.desc()).limit(100).all()
+    return render_template('index.html', latest_data=latest_data, data_history=data_history)
 
 @app.route('/receive_data', methods=['POST'])
 def receive_data():
     data = request.get_json()
     
-    # Add timestamp to the data
-    entry = {
-        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'data': data
-    }
+    gps_data = GPSData(
+        latitude=data['latitude'],
+        longitude=data['longitude'],
+        speed=data['speed'],
+        altitude=data['altitude'],
+        temperature=data['temperature'],
+        humidity=data['humidity'],
+        light=data['light'],
+        current=data['current'],
+        voltage=data['voltage']
+    )
     
-    # Add to history and maintain max size
-    data_history.append(entry)
-    if len(data_history) > MAX_HISTORY:
-        data_history.pop(0)
+    db.session.add(gps_data)
+    db.session.commit()
     
     return {'status': 'success'}, 200
 
 if __name__ == '__main__':
+    db.create_all()  # Create the database tables if they don't exist
     app.run(host='0.0.0.0', port=5001, debug=True)
